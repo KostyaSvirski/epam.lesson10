@@ -1,0 +1,146 @@
+
+1. Why are almost collection classes not thread-safe?
+Do you notice that all the basic collection classes - ArrayList, LinkedList, HashMap, HashSet, TreeMap, TreeSet, etc - all are not synchronized? In fact, all collection classes (except Vector and Hashtable) in the java.util package are not thread-safe. The only two legacy collections are thread-safe: Vector and Hashtable. WHY?
+Here’s the reason: Synchronization can be very expensive!
+You know, Vector and Hashtable are the two collections exist early in Java history, and they are designed for thread-safe from the start (if you have chance to look at their source code, you will see their methods are all synchronized!). However, they quickly expose poor performance in multi-threaded programs. As you may know, synchronization requires locks which always take time to monitor, and that reduces the performance.
+That’s why the new collections (List, Set, Map, etc) provide no concurrency control at all to provide maximum performance in single-threaded applications.
+The following test program compares performance between Vector and ArrayList - the two similar collections (Vector is thread-safe and ArrayList is not):
+(code start)
+import java.util.*;
+ 
+/**
+ * This test program compares performance of Vector versus ArrayList
+ * @author www.codejava.net
+ *
+ */
+public class CollectionsThreadSafeTest {
+ 
+    public void testVector() {
+        long startTime = System.currentTimeMillis();
+ 
+        Vector<Integer> vector = new Vector<>();
+ 
+        for (int i = 0; i < 10_000_000; i++) {
+            vector.addElement(i);
+        }
+ 
+        long endTime = System.currentTimeMillis();
+ 
+        long totalTime = endTime - startTime;
+ 
+        System.out.println("Test Vector: " + totalTime + " ms");
+ 
+    }
+ 
+    public void testArrayList() {
+        long startTime = System.currentTimeMillis();
+ 
+        List<Integer> list = new ArrayList<>();
+ 
+        for (int i = 0; i < 10_000_000; i++) {
+            list.add(i);
+        }
+ 
+        long endTime = System.currentTimeMillis();
+ 
+        long totalTime = endTime - startTime;
+ 
+        System.out.println("Test ArrayList: " + totalTime + " ms");
+ 
+    }
+ 
+    public static void main(String[] args) {
+        CollectionsThreadSafeTest tester = new CollectionsThreadSafeTest();
+ 
+        tester.testVector();
+ 
+        tester.testArrayList();
+ 
+    }
+ 
+}
+(code end)
+This program performs the test by comparing the time needed to add ten millions of elements into each collection. And here’s a result:
+(code start)
+Test Vector: 9266 ms
+Test ArrayList: 4588 ms
+(code end)
+As you can see, with a fairly large number of elements, the ArrayList performs about twice faster than the Vector. Let run this program on your computer to experiment the results yourself.
+ 
+2. Fail-Fast Iterators
+When working with collections, you also need to understand this concurrency policy with regard to their iterators: Fail-fast iterators.
+Consider the following code snippet that iterates a list of Strings:
+(code start)
+List<String> listNames = Arrays.asList("Tom", "Joe", "Bill", "Dave", "John");
+ 
+Iterator<String> iterator = listNames.iterator();
+ 
+while (iterator.hasNext()) {
+    String nextName = iterator.next();
+    System.out.println(nextName);
+}
+(code end)
+Here, we use the collection’s iterator to traverse through elements in the collection. Imagine the listNames is shared between two threads: the current thread that executes the iteration, and another thread. Now imagine the second thread is modifying the collection (adding or removing elements) while the first thread is still iterating over the elements. Can you guess what happens?
+The iteration code in the first thread throws ConcurrentModificationException and fails immediately, hence the term ‘fail-fast iterators’.
+Why does the iterator fail so fast? It’s because iterating a collection while it is being modified by another thread is very dangerous: the collection may have more, less or no elements after the iterator has been obtained, so that leads to unexpected behavior and inconsistent result. And this should be avoided as early as possible, thus the iterator must throw an exception to stop the execution of the current thread.
+The following test program mimics a situation that throws ConcurrentModificationException: 
+(code start)
+import java.util.*;
+ 
+/**
+ * This test program illustrates how a collection's iterator fails fast
+ * and throw ConcurrentModificationException
+ * @author www.codejava.net
+ *
+ */
+public class IteratorFailFastTest {
+ 
+    private List<Integer> list = new ArrayList<>();
+ 
+    public IteratorFailFastTest() {
+        for (int i = 0; i < 10_000; i++) {
+            list.add(i);
+        }
+    }
+ 
+    public void runUpdateThread() {
+        Thread thread1 = new Thread(new Runnable() {
+ 
+            public void run() {
+                for (int i = 10_000; i < 20_000; i++) {
+                    list.add(i);
+                }
+            }
+        });
+ 
+        thread1.start();
+    }
+ 
+ 
+    public void runIteratorThread() {
+        Thread thread2 = new Thread(new Runnable() {
+ 
+            public void run() {
+                ListIterator<Integer> iterator = list.listIterator();
+                while (iterator.hasNext()) {
+                    Integer number = iterator.next();
+                    System.out.println(number);
+                }
+            }
+        });
+ 
+        thread2.start();
+    }
+ 
+    public static void main(String[] args) {
+        IteratorFailFastTest tester = new IteratorFailFastTest();
+ 
+        tester.runIteratorThread();
+        tester.runUpdateThread();
+    }
+}
+(code end)
+As you can see, the thread1 is iterating the list, while the thread2 adds more elements to the collection. This causes the ConcurrentModificationException to be thrown.
+Note that the fail-fast behavior of collection’s iterators intends to help find and diagnose bugs easily. We should not rely on it to handle ConcurrentModificationException in our programs, because the fail-fast behavior is not guaranteed. That means if this exception is thrown, the program should stop immediately, instead of continuing the execution.
+Now you understand how ConcurrentModificationExceptionworks and it’s better to avoid it.
+ 
